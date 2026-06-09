@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Westermo EdgePredict</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+:root {
+  --bg: #0a0c0f;
+  --bg2: #0f1215;
+  --bg3: #161b22;
+  --bg4: #1e252e;
+  --border: rgba(255,255,255,0.07);
+  --border2: rgba(255,255,255,0.13);
+  --text: #e8edf3;
+  --text2: #8a99ab;
+  --text3: #4a5563;
+  --accent: #00d4ff;
+  --accent2: rgba(0,212,255,0.12);
+  --green: #22c55e;
+  --green2: rgba(34,197,94,0.12);
+  --yellow: #f59e0b;
+  --yellow2: rgba(245,158,11,0.12);
+  --red: #ef4444;
+  --red2: rgba(239,68,68,0.12);
+  --font: 'IBM Plex Sans', sans-serif;
+  --mono: 'IBM Plex Mono', monospace;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; min-height: 100vh; overflow-x: hidden; }
+
+/* ── Scan-line overlay ── */
+body::after { content: ''; position: fixed; inset: 0; background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px); pointer-events: none; z-index: 9999; }
+
+/* ── Top bar ── */
+#topbar { display: flex; align-items: center; gap: 20px; padding: 0 24px; height: 52px; background: var(--bg2); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 100; }
+.logo { font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--accent); letter-spacing: 0.08em; }
+.logo span { color: var(--text2); font-weight: 400; }
+#conn-status { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text2); font-family: var(--mono); margin-left: auto; }
+#conn-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text3); }
+#conn-dot.live { background: var(--green); box-shadow: 0 0 6px var(--green); animation: pulse 2s infinite; }
+#conn-dot.error { background: var(--red); }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+.topbar-btn { background: var(--bg3); border: 1px solid var(--border2); color: var(--text2); padding: 5px 14px; border-radius: 4px; font-size: 12px; font-family: var(--mono); cursor: pointer; transition: all 0.15s; }
+.topbar-btn:hover { border-color: var(--accent); color: var(--accent); }
+.topbar-btn.danger { border-color: rgba(239,68,68,0.4); color: var(--red); }
+.topbar-btn.danger:hover { background: var(--red2); }
+
+/* ── Main grid ── */
+#main { display: grid; grid-template-columns: 260px 1fr; grid-template-rows: auto 1fr; min-height: calc(100vh - 52px); }
+#sidebar { grid-row: 1 / 3; background: var(--bg2); border-right: 1px solid var(--border); padding: 20px 0; overflow-y: auto; }
+#content { padding: 20px 24px; display: flex; flex-direction: column; gap: 20px; }
+
+/* ── Section label ── */
+.section-label { font-size: 10px; font-family: var(--mono); color: var(--text3); letter-spacing: 0.12em; text-transform: uppercase; padding: 0 20px 10px; }
+
+/* ── Device cards (sidebar) ── */
+.device-card { margin: 4px 12px; padding: 12px 14px; background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; transition: all 0.15s; }
+.device-card:hover { border-color: var(--border2); }
+.device-card.selected { border-color: var(--accent); background: var(--accent2); }
+.device-card.anomaly { border-color: var(--red) !important; background: var(--red2) !important; animation: borderpulse 1.5s infinite; }
+.device-card.warning { border-color: var(--yellow); background: var(--yellow2); }
+@keyframes borderpulse { 0%,100%{border-color:var(--red)} 50%{border-color:rgba(239,68,68,0.4)} }
+.dev-name { font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--text); margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
+.dev-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.dev-metric { font-size: 11px; color: var(--text2); }
+.dev-metric .val { font-family: var(--mono); font-size: 12px; color: var(--text); display: block; }
+
+/* ── Status badge ── */
+.badge { font-size: 10px; font-family: var(--mono); padding: 2px 7px; border-radius: 3px; font-weight: 600; letter-spacing: 0.05em; }
+.badge.normal { background: var(--green2); color: var(--green); }
+.badge.warning { background: var(--yellow2); color: var(--yellow); }
+.badge.critical { background: var(--red2); color: var(--red); }
+
+/* ── Stat cards row ── */
+#stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.stat-card { background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; padding: 14px 16px; }
+.stat-card .label { font-size: 10px; font-family: var(--mono); color: var(--text3); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 6px; }
+.stat-card .value { font-size: 26px; font-family: var(--mono); font-weight: 600; color: var(--text); line-height: 1; }
+.stat-card .sub { font-size: 11px; color: var(--text2); margin-top: 4px; }
+.stat-card.danger .value { color: var(--red); }
+.stat-card.warn .value { color: var(--yellow); }
+.stat-card.ok .value { color: var(--green); }
+
+/* ── Charts row ── */
+#charts-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.chart-panel { background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; padding: 16px; }
+.chart-title { font-size: 11px; font-family: var(--mono); color: var(--text2); margin-bottom: 14px; letter-spacing: 0.06em; }
+
+/* ── Event log ── */
+#log-panel { background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; padding: 16px; flex: 1; min-height: 0; }
+#log-header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+#log-list { height: 200px; overflow-y: auto; font-family: var(--mono); font-size: 11px; display: flex; flex-direction: column; gap: 3px; }
+#log-list::-webkit-scrollbar { width: 4px; }
+#log-list::-webkit-scrollbar-track { background: var(--bg); }
+#log-list::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+.log-row { display: grid; grid-template-columns: 80px 130px 60px 70px 65px 65px 70px auto; gap: 10px; align-items: center; padding: 4px 8px; border-radius: 3px; transition: background 0.1s; }
+.log-row:hover { background: var(--bg4); }
+.log-row.anom { background: rgba(239,68,68,0.06); }
+.log-cell { color: var(--text2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.log-cell.hi { color: var(--text); }
+.log-header-row { display: grid; grid-template-columns: 80px 130px 60px 70px 65px 65px 70px auto; gap: 10px; padding: 4px 8px; border-bottom: 1px solid var(--border); margin-bottom: 4px; font-size: 10px; color: var(--text3); letter-spacing: 0.08em; }
+
+/* ── Fault injection panel ── */
+#fault-panel { background: var(--bg3); border: 1px solid rgba(239,68,68,0.3); border-radius: 6px; padding: 16px; }
+#fault-header { font-size: 11px; font-family: var(--mono); color: var(--red); letter-spacing: 0.08em; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+#fault-controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.fault-select { background: var(--bg4); border: 1px solid var(--border2); color: var(--text); padding: 6px 10px; border-radius: 4px; font-family: var(--mono); font-size: 12px; }
+.fault-btn { background: var(--red2); border: 1px solid rgba(239,68,68,0.4); color: var(--red); padding: 6px 16px; border-radius: 4px; font-family: var(--mono); font-size: 12px; cursor: pointer; transition: all 0.15s; }
+.fault-btn:hover { background: rgba(239,68,68,0.2); }
+.fault-btn.clear { background: var(--bg4); border-color: var(--border2); color: var(--text2); }
+.fault-btn.clear:hover { border-color: var(--border2); color: var(--text); background: var(--bg3); }
+
+/* ── Misc ── */
+select option { background: var(--bg3); }
+</style>
+</head>
+<body>
+
+<!-- Top bar -->
+<div id="topbar">
+  <div class="logo">WESTERMO <span>/ EDGEPREDICT</span></div>
+  <div style="font-size:11px; color:var(--text3); font-family:var(--mono);">INDUSTRIAL WIRELESS ANOMALY DETECTION</div>
+  <button class="topbar-btn" onclick="clearLog()">CLEAR LOG</button>
+  <button class="topbar-btn danger" onclick="toggleSim()" id="sim-btn">■ STOP SIM</button>
+  <div id="conn-status"><div id="conn-dot"></div><span id="conn-label">CONNECTING…</span></div>
+</div>
+
+<div id="main">
+  <!-- Sidebar -->
+  <div id="sidebar">
+    <div class="section-label">MONITORED DEVICES</div>
+    <div id="device-list"></div>
+
+    <div class="section-label" style="margin-top:24px;">SYSTEM INFO</div>
+    <div style="padding: 0 20px; font-size:11px; font-family:var(--mono); line-height:2; color:var(--text2);">
+      <div>Algorithm: <span style="color:var(--accent)">Isolation Forest</span></div>
+      <div>Estimators: <span style="color:var(--text)">100</span></div>
+      <div>Contamination: <span style="color:var(--text)">5%</span></div>
+      <div>Training samples: <span style="color:var(--text)">2,000</span></div>
+      <div>Update interval: <span style="color:var(--text)">1s</span></div>
+    </div>
+  </div>
+
+  <!-- Content -->
+  <div id="content">
+
+    <!-- Stats row -->
+    <div id="stats-row">
+      <div class="stat-card ok">
+        <div class="label">TOTAL READINGS</div>
+        <div class="value" id="s-total">0</div>
+        <div class="sub">since session start</div>
+      </div>
+      <div class="stat-card danger">
+        <div class="label">ANOMALIES</div>
+        <div class="value" id="s-anoms">0</div>
+        <div class="sub" id="s-rate">rate: 0.0%</div>
+      </div>
+      <div class="stat-card warn">
+        <div class="label">CRITICALS</div>
+        <div class="value" id="s-crits">0</div>
+        <div class="sub">high-severity events</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">AVG PACKET LOSS</div>
+        <div class="value" id="s-loss">—</div>
+        <div class="sub">across all devices</div>
+      </div>
+    </div>
+
+    <!-- Charts row -->
+    <div id="charts-row">
+      <div class="chart-panel">
+        <div class="chart-title">▸ PACKET LOSS % — LAST 60s (ALL DEVICES)</div>
+        <div style="position:relative;height:180px;"><canvas id="lossChart"></canvas></div>
+      </div>
+      <div class="chart-panel">
+        <div class="chart-title">▸ SIGNAL STRENGTH dBm — LAST 60s</div>
+        <div style="position:relative;height:180px;"><canvas id="sigChart"></canvas></div>
+      </div>
+    </div>
+
+    <!-- Fault injection -->
+    <div id="fault-panel">
+      <div id="fault-header">⚡ FAULT INJECTION — simulate device degradation</div>
+      <div id="fault-controls">
+        <select class="fault-select" id="fault-device">
+          <option value="">— select device —</option>
+        </select>
+        <select class="fault-select" id="fault-type">
+          <option value="packet_loss">Packet loss surge</option>
+          <option value="temperature">Temperature runaway</option>
+          <option value="signal">Signal deterioration</option>
+        </select>
+        <button class="fault-btn" onclick="injectFault()">INJECT FAULT</button>
+        <button class="fault-btn clear" onclick="clearFault()">CLEAR FAULT</button>
+        <span id="fault-status" style="font-size:11px;font-family:var(--mono);color:var(--text3);">no fault active</span>
+      </div>
+    </div>
+
+    <!-- Event log -->
+    <div id="log-panel">
+      <div id="log-header">
+        <div class="chart-title" style="margin:0;">▸ LIVE EVENT LOG</div>
+        <label style="font-size:11px;font-family:var(--mono);color:var(--text2);display:flex;align-items:center;gap:6px;cursor:pointer;margin-left:auto;">
+          <input type="checkbox" id="anom-filter"> ANOMALIES ONLY
+        </label>
+      </div>
+      <div class="log-header-row">
+        <span>TIME</span><span>DEVICE</span><span>SIGNAL</span><span>PKT LOSS</span><span>TEMP</span><span>LATENCY</span><span>SCORE</span><span>STATUS</span>
+      </div>
+      <div id="log-list"></div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ── Dynamic Configuration ──────────────────────────────────────────────────
+// Automatically detect the backend URL based on the current page location
+function getBackendUrl() {
+  // If the page is served from file://, default to localhost:8000
+  if (window.location.protocol === 'file:') {
+    return 'http://localhost:8000';
+  }
+  
+  // If the page is served from http/https, use the same host
+  const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
+  const host = window.location.host;
+  return `${protocol}//${host}`;
+}
+
+function getWebSocketUrl() {
+  // If the page is served from file://, default to localhost:8000
+  if (window.location.protocol === 'file:') {
+    return 'ws://localhost:8000/ws/live';
+  }
+  
+  // If the page is served from http/https, use the same host with ws/wss
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const host = window.location.host;
+  return `${protocol}//${host}/ws/live`;
+}
+
+const API_BASE = getBackendUrl();
+const WS_URL   = getWebSocketUrl();
+const DEVICES  = ['WES-3152P-A', 'WES-3152P-B', 'WES-3152P-C', 'WES-4960G-A'];
+const COLORS   = { 'WES-3152P-A': '#00d4ff', 'WES-3152P-B': '#22c55e', 'WES-3152P-C': '#f59e0b', 'WES-4960G-A': '#a78bfa' };
+const MAX_POINTS = 60;
+
+// ── State ──────────────────────────────────────────────────────────────────
+let ws = null;
+let simRunning = true;
+let deviceState = {};
+let chartData = { labels: [], loss: {}, signal: {} };
+let logEntries = [];
+let totalReadings = 0, totalAnomalies = 0, totalCriticals = 0;
+let lossChart, sigChart;
+let wsReconnectAttempts = 0;
+const MAX_RECONNECT_ATTEMPTS = 5;
+const RECONNECT_DELAY = 2000;
+
+DEVICES.forEach(d => {
+  deviceState[d] = { signal: -50, packet_loss: 0.5, temperature: 40, latency: 10, is_anomaly: false, severity: 'normal' };
+  chartData.loss[d] = [];
+  chartData.signal[d] = [];
+});
+
+// ── Init device select ─────────────────────────────────────────────────────
+const fdSel = document.getElementById('fault-device');
+DEVICES.forEach(d => { fdSel.innerHTML += `<option value="${d}">${d}</option>`; });
+
+// ── Device sidebar ─────────────────────────────────────────────────────────
+function renderDevices() {
+  const el = document.getElementById('device-list');
+  el.innerHTML = DEVICES.map(d => {
+    const s = deviceState[d];
+    const cls = s.severity === 'critical' ? 'anomaly' : s.severity === 'warning' ? 'warning' : '';
+    return `<div class="device-card ${cls}">
+      <div class="dev-name">${d}<span class="badge ${s.severity}">${s.severity.toUpperCase()}</span></div>
+      <div class="dev-metrics">
+        <div class="dev-metric">SIG<span class="val">${s.signal.toFixed(1)} dBm</span></div>
+        <div class="dev-metric">PKT LOSS<span class="val">${s.packet_loss.toFixed(2)}%</span></div>
+        <div class="dev-metric">TEMP<span class="val">${s.temperature.toFixed(1)}°C</span></div>
+        <div class="dev-metric">LATENCY<span class="val">${s.latency.toFixed(1)} ms</span></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── Charts setup ───────────────────────────────────────────────────────────
+function makeChartCfg(datasets, yLabel) {
+  return {
+    type: 'line',
+    data: { labels: [], datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { display: false },
+        y: { title: { display: false }, grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#4a5563', font: { family: "'IBM Plex Mono'", size: 10 }, maxTicksLimit: 5 }, border: { color: 'rgba(255,255,255,0.07)' } }
+      },
+      elements: { point: { radius: 0 }, line: { borderWidth: 1.5 } }
+    }
+  };
+}
+
+function initCharts() {
+  const lossDs = DEVICES.map(d => ({ label: d, data: [], borderColor: COLORS[d], backgroundColor: COLORS[d]+'22', fill: false, tension: 0.3 }));
+  const sigDs  = DEVICES.map(d => ({ label: d, data: [], borderColor: COLORS[d], backgroundColor: 'transparent', fill: false, tension: 0.3 }));
+  lossChart = new Chart(document.getElementById('lossChart'), makeChartCfg(lossDs, 'Packet loss %'));
+  sigChart  = new Chart(document.getElementById('sigChart'),  makeChartCfg(sigDs, 'Signal dBm'));
+}
+
+function updateCharts(readings) {
+  const now = new Date().toLocaleTimeString('en',{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  lossChart.data.labels.push(now);
+  sigChart.data.labels.push(now);
+  if (lossChart.data.labels.length > MAX_POINTS) {
+    lossChart.data.labels.shift();
+    sigChart.data.labels.shift();
+  }
+  readings.forEach(r => {
+    const li = DEVICES.indexOf(r.device_id);
+    if (li < 0) return;
+    lossChart.data.datasets[li].data.push(r.packet_loss);
+    sigChart.data.datasets[li].data.push(r.signal_strength);
+    if (lossChart.data.datasets[li].data.length > MAX_POINTS) lossChart.data.datasets[li].data.shift();
+    if (sigChart.data.datasets[li].data.length > MAX_POINTS)  sigChart.data.datasets[li].data.shift();
+  });
+  lossChart.update('none');
+  sigChart.update('none');
+}
+
+// ── Stats ─────────────────────────────────────────────────────────────────
+function updateStats(readings) {
+  totalReadings += readings.length;
+  const anoms = readings.filter(r => r.is_anomaly).length;
+  const crits = readings.filter(r => r.severity === 'critical').length;
+  totalAnomalies += anoms;
+  totalCriticals += crits;
+  const avgLoss = readings.reduce((a,r) => a + r.packet_loss, 0) / readings.length;
+
+  document.getElementById('s-total').textContent = totalReadings.toLocaleString();
+  document.getElementById('s-anoms').textContent = totalAnomalies.toLocaleString();
+  document.getElementById('s-crits').textContent = totalCriticals.toLocaleString();
+  document.getElementById('s-rate').textContent  = `rate: ${(totalAnomalies/totalReadings*100).toFixed(1)}%`;
+  document.getElementById('s-loss').textContent  = avgLoss.toFixed(2) + '%';
+}
+
+// ── Event log ─────────────────────────────────────────────────────────────
+function addLogEntries(readings) {
+  logEntries.unshift(...readings);
+  if (logEntries.length > 300) logEntries = logEntries.slice(0, 300);
+  renderLog();
+}
+
+function renderLog() {
+  const anomOnly = document.getElementById('anom-filter').checked;
+  const entries = anomOnly ? logEntries.filter(e => e.is_anomaly) : logEntries;
+  const list = document.getElementById('log-list');
+  list.innerHTML = entries.slice(0, 100).map(e => {
+    const t = new Date(e.timestamp).toLocaleTimeString('en', {hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    const cls = e.is_anomaly ? 'anom' : '';
+    return `<div class="log-row ${cls}">
+      <span class="log-cell">${t}</span>
+      <span class="log-cell hi">${e.device_id}</span>
+      <span class="log-cell" style="color:${e.signal_strength < -70 ? 'var(--red)' : 'var(--text2)'}">${e.signal_strength.toFixed(1)}</span>
+      <span class="log-cell" style="color:${e.packet_loss > 2 ? 'var(--red)' : e.packet_loss > 1 ? 'var(--yellow)' : 'var(--text2)'}">${e.packet_loss.toFixed(3)}%</span>
+      <span class="log-cell" style="color:${e.temperature > 65 ? 'var(--red)' : 'var(--text2)'}">${e.temperature.toFixed(1)}°C</span>
+      <span class="log-cell">${e.latency.toFixed(1)}ms</span>
+      <span class="log-cell" style="color:${e.anomaly_score < -0.15 ? 'var(--red)' : 'var(--text2)'}">${e.anomaly_score.toFixed(3)}</span>
+      <span class="log-cell"><span class="badge ${e.severity}">${e.severity.toUpperCase()}</span></span>
+    </div>`;
+  }).join('');
+}
+
+document.getElementById('anom-filter').addEventListener('change', renderLog);
+
+// ── WebSocket with improved error handling ─────────────────────────────────
+function connect() {
+  ws = new WebSocket(WS_URL);
+  ws.onopen = () => {
+    wsReconnectAttempts = 0;
+    document.getElementById('conn-dot').className = 'live';
+    document.getElementById('conn-label').textContent = 'LIVE';
+  };
+  ws.onclose = () => {
+    document.getElementById('conn-dot').className = 'error';
+    document.getElementById('conn-label').textContent = 'DISCONNECTED — DEMO MODE';
+    if (simRunning) {
+      setTimeout(demoTick, 1000);
+    }
+    // Attempt to reconnect
+    if (wsReconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+      wsReconnectAttempts++;
+      setTimeout(connect, RECONNECT_DELAY);
+    }
+  };
+  ws.onerror = (error) => {
+    console.error('WebSocket error:', error);
+    document.getElementById('conn-dot').className = 'error';
+    document.getElementById('conn-label').textContent = 'NO SERVER — DEMO MODE';
+    ws = null;
+    demoLoop();
+  };
+  ws.onmessage = (ev) => {
+    try {
+      const msg = JSON.parse(ev.data);
+      if (msg.type === 'readings') processReadings(msg.data);
+    } catch (e) {
+      console.error('Failed to parse WebSocket message:', e);
+    }
+  };
+}
+
+// ── Demo mode (no backend) ─────────────────────────────────────────────────
+let demoRunning = false;
+let faultActive = null;
+let faultStep = 0;
+
+function demoLoop() {
+  if (demoRunning) return;
+  demoRunning = true;
+  demoTick();
+}
+
+function demoTick() {
+  if (!simRunning) { demoRunning = false; return; }
+  const readings = DEVICES.map(d => {
+    let signal, loss, temp, latency, is_anom, score, sev;
+    if (faultActive && faultActive.device === d) {
+      faultStep++;
+      if (faultActive.type === 'packet_loss') {
+        loss = Math.min(0.5 + faultStep * 0.6, 18);
+        signal = gaussRand(-52, 3); temp = gaussRand(42, 2); latency = Math.max(gaussRand(12,2),0);
+      } else if (faultActive.type === 'temperature') {
+        temp = Math.min(40 + faultStep * 2.5, 80);
+        signal = gaussRand(-52, 3); loss = Math.max(gaussRand(0.5,0.2),0); latency = Math.max(gaussRand(12,2),0);
+      } else {
+        signal = Math.max(-50 - faultStep * 3, -92);
+        temp = gaussRand(42, 2); loss = Math.max(gaussRand(0.5,0.2),0); latency = Math.max(gaussRand(12,2),0);
+      }
+      // Simple anomaly heuristic for demo
+      is_anom = loss > 2.5 || temp > 65 || signal < -72;
+      score = is_anom ? -0.2 - Math.random()*0.1 : -0.05;
+      sev = score < -0.25 ? 'critical' : is_anom ? 'warning' : 'normal';
+    } else {
+      signal = gaussRand(-50, 5); loss = Math.max(gaussRand(0.5,0.2),0); temp = gaussRand(40,3); latency = Math.max(gaussRand(10,2),0);
+      is_anom = false; score = -0.05 + Math.random()*0.03; sev = 'normal';
+    }
+    return { device_id: d, signal_strength: signal, packet_loss: loss, temperature: temp, latency, is_anomaly: is_anom, anomaly_score: score, severity: sev, timestamp: new Date().toISOString() };
+  });
+  processReadings(readings);
+  setTimeout(demoTick, 1000);
+}
+
+function gaussRand(mean, std) {
+  let u=0,v=0;
+  while(!u) u=Math.random();
+  while(!v) v=Math.random();
+  return mean + std * Math.sqrt(-2*Math.log(u)) * Math.cos(2*Math.PI*v);
+}
+
+// ── Process readings (common path) ─────────────────────────────────────────
+function processReadings(readings) {
+  readings.forEach(r => { deviceState[r.device_id] = r; });
+  renderDevices();
+  updateStats(readings);
+  updateCharts(readings);
+  addLogEntries(readings);
+}
+
+// ── Controls ───────────────────────────────────────────────────────────────
+function toggleSim() {
+  simRunning = !simRunning;
+  const btn = document.getElementById('sim-btn');
+  if (simRunning) { btn.textContent = '■ STOP SIM'; demoTick(); }
+  else { btn.textContent = '▶ START SIM'; }
+}
+
+function clearLog() {
+  logEntries = [];
+  totalReadings = 0; totalAnomalies = 0; totalCriticals = 0;
+  renderLog();
+  document.getElementById('s-total').textContent = '0';
+  document.getElementById('s-anoms').textContent = '0';
+  document.getElementById('s-crits').textContent = '0';
+  document.getElementById('s-rate').textContent = 'rate: 0.0%';
+  document.getElementById('s-loss').textContent = '—';
+}
+
+function injectFault() {
+  const device = document.getElementById('fault-device').value;
+  const type   = document.getElementById('fault-type').value;
+  if (!device) { alert('Select a device first.'); return; }
+  faultStep = 0;
+  faultActive = { device, type };
+  document.getElementById('fault-status').textContent = `ACTIVE: ${device} — ${type.replace('_',' ')}`;
+  document.getElementById('fault-status').style.color = 'var(--red)';
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ action: 'inject_fault', device, fault_type: type }));
+  }
+}
+
+function clearFault() {
+  faultActive = null; faultStep = 0;
+  document.getElementById('fault-status').textContent = 'no fault active';
+  document.getElementById('fault-status').style.color = 'var(--text3)';
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ action: 'clear_fault' }));
+  }
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────
+console.log('Backend URL:', API_BASE);
+console.log('WebSocket URL:', WS_URL);
+initCharts();
+renderDevices();
+connect();
+</script>
+</body>
+</html>
